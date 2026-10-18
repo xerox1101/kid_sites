@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><title>Math Tracker Pro</title>
+    <style>
+        body{font-family:-apple-system,sans-serif;text-align:center;background:#f5f5f7;color:#1d1d1f;padding:20px;user-select:none;}
+        .card{background:white;max-width:440px;margin:0 auto;padding:25px;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.1);position:relative;}
+        #timer-display{position:absolute;top:15px;right:20px;font-size:16px;color:#86868b;font-weight:500;font-family:monospace;}
+        #problem{font-size:64px;font-weight:bold;margin:15px 0;height:85px;display:flex;justify-content:center;align-items:center;}
+        .blurred{filter:blur(15px);opacity:0.05;}
+        input[type="number"]{font-size:32px;width:140px;text-align:center;padding:6px;border:2px solid #d2d2d7;border-radius:12px;margin-bottom:15px;outline:none;}
+        input[type="number"]:focus{border-color:#0071e3;}
+        button{font-size:16px;font-weight:600;padding:10px 20px;border:none;border-radius:8px;background:#0071e3;color:white;cursor:pointer;margin:4px;}
+        button:hover{background:#0077ed;}button.secondary{background:#86868b;}
+        #feedback{font-size:22px;font-weight:600;height:30px;margin-bottom:10px;}
+        .correct{color:#34c759;}.incorrect{color:#ff3b30;}
+        .ops{margin:15px 0;font-size:15px;display:flex;justify-content:center;gap:12px;}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);justify-content:center;align-items:center;z-index:10;}
+        .modal-content{background:white;padding:25px;border-radius:16px;max-width:420px;width:90%;max-height:85vh;overflow-y:auto;text-align:left;box-shadow:0 4px 24px rgba(0,0,0,0.15);}
+        .stat-line{display:flex;justify-content:space-between;margin:8px 0;font-size:16px;border-bottom:1px solid #e5e5ea;padding-bottom:4px;}
+        .adv-box{background:#f5f5f7;padding:12px;border-radius:8px;font-size:14px;margin-top:10px;line-height:1.4;}
+        .history-log{max-height:100px;overflow-y:auto;background:#f5f5f7;padding:8px;border-radius:8px;font-size:13px;font-family:monospace;margin-top:10px;}
+        h3{margin:15px 0 5px 0;font-size:18px;border-left:4px solid #0071e3;padding-left:8px;}
+    </style>
+</head>
+<body>
+<div class="card">
+    <div id="timer-display">0.0s</div><div id="feedback"></div><div id="problem">?? ? ??</div>
+    <div id="counter-display" style="position:absolute;top:15px;left:20px;font-size:16px;color:#86868b;font-weight:500;font-family:monospace;">0</div>
+    <form id="mathForm" onsubmit="handleSubmit(event)">
+        <input type="number" id="userAns" autocomplete="off" required><br>
+        <button type="submit" id="submitBtn">Start Game</button>
+    </form>
+    <div class="ops" id="opsConfig">
+        <label><input type="checkbox" id="opAdd" checked> ➕</label>
+        <label><input type="checkbox" id="opSub" checked> ➖</label>
+        <label><input type="checkbox" id="opMul"> ✖️</label>
+        <span style="margin-left:10px;">🎯 Goal: <input type="number" id="targetCount" min="1" placeholder="∞" style="font-size:14px;width:50px;padding:3px;margin:0;border:1px solid #d2d2d7;border-radius:6px;"></span>
+      </div>
+    <div style="margin-top:20px;border-top:1px solid #e5e5ea;padding-top:15px;">
+        <button class="secondary" id="pauseBtn" onclick="togglePause()">Pause</button>
+        <button class="secondary" onclick="openReport()">View Report</button>
+        <button class="secondary" onclick="resetStats()">Reset Stats</button>
+    </div>
+</div>
+
+<div id="reportModal" class="modal">
+    <div class="modal-content">
+        <h2>Performance Report</h2>
+        <div class="stat-line"><span>Total Answered:</span><span id="statTotal">0</span></div>
+
+        <h3>Operations Breakdown</h3>
+        <div class="stat-line"><span>Addition (➕):</span><span id="statAdd">0/0 (0s)</span></div>
+        <div class="stat-line"><span>Subtraction (➖):</span><span id="statSub">0/0 (0s)</span></div>
+        <div class="stat-line"><span>Multiplication (✖️):</span><span id="statMul">0/0 (0s)</span></div>
+
+        <h3>Advanced Size Insights</h3>
+        <div class="adv-box" id="advInsights">Complete problems to generate size trends...</div>
+
+        <h3>Log</h3><div id="historyLog" class="history-log"></div>
+        <button style="margin-top:15px;width:100%;background:#34c759;" onclick="exportReportData()">Download Report</button>
+        <button style="margin-top:15px;width:100%;" onclick="closeReport()">Close</button>
+    </div>
+</div>
+<script>
+    let n1=0,n2=0,ans=0,tS=0,tE=0,tA=null,tI=null,err=false,ps=false,wP=false,st=false,opStr='',curOp='';
+    let s = {t:0,c:0,tm:0,h:[]};
+    let opStats = { '+': {t:0,c:0,tm:0}, '-': {t:0,c:0,tm:0}, '*': {t:0,c:0,tm:0} };
+    let sizeStats = { small: {t:0,c:0,tm:0}, large: {t:0,c:0,tm:0} };
+
+    function rand(maxDigits){return Math.floor(Math.random()*(Math.pow(10,Math.floor(Math.random()*maxDigits)+1)-1))+1;}
+
+    function loop(){
+        clearInterval(tI);tI=setInterval(()=>{if(!err&&!ps&&st){
+            let e=((performance.now()-tS)/1000)+tE;document.getElementById('timer-display').innerText=`${e.toFixed(1)}s`;
+        }},100);
+    }
+
+    function togglePause(){
+        if(!st||err)return;let pE=document.getElementById('problem'),iF=document.getElementById('userAns'),sB=document.getElementById('submitBtn'),pB=document.getElementById('pauseBtn');
+        if(!ps){ps=true;clearInterval(tI);tE+=(performance.now()-tS)/1000;pE.classList.add('blurred');iF.disabled=sB.disabled=true;pB.innerText="Resume";pB.style.background="#0071e3";}
+        else{ps=false;pE.classList.remove('blurred');iF.disabled=sB.disabled=false;pB.innerText="Pause";pB.style.background="";if(document.activeElement!==sB)iF.focus();tS=performance.now();loop();}
+    }
+
+    function init(){
+        clearTimeout(tA);clearInterval(tI);st=err=ps=false;tE=0;
+        document.getElementById('feedback').innerText='Ready when you are!';document.getElementById('feedback').className='';document.getElementById('timer-display').innerText='0.0s';
+        document.getElementById('counter-display').innerText='0';
+        let pE=document.getElementById('problem');pE.innerText="?? ? ??";pE.classList.add('blurred');
+        document.getElementById('userAns').value='';document.getElementById('userAns').disabled=true;
+        let sB=document.getElementById('submitBtn');sB.innerText="Start Game";sB.style.background="#34c759";sB.disabled=false;sB.focus();
+        document.getElementById('pauseBtn').innerText="Pause";document.getElementById('pauseBtn').style.background="";document.getElementById('pauseBtn').disabled=true;
+        document.getElementById('opsConfig').style.pointerEvents="auto";document.getElementById('opsConfig').style.opacity="1";
+    }
+
+    function next(){
+        clearTimeout(tA);err=ps=false;tE=0;st=true;
+        let pool=[];if(document.getElementById('opAdd').checked)pool.push('+');if(document.getElementById('opSub').checked)pool.push('-');if(document.getElementById('opMul').checked)pool.push('*');
+        if(!pool.length){alert('Select an operation!');st=false;init();return;}
+
+        let goal = parseInt(document.getElementById('targetCount').value);
+        document.getElementById('counter-display').innerText = goal ? `${s.t + 1} / ${goal}` : `${s.t + 1}`;
+
+        document.getElementById('opsConfig').style.pointerEvents="none";document.getElementById('opsConfig').style.opacity="0.5";
+        document.getElementById('feedback').innerText='';document.getElementById('feedback').className='';document.getElementById('timer-display').innerText='0.0s';
+        let pE=document.getElementById('problem');pE.classList.remove('blurred');
+        let iF=document.getElementById('userAns');iF.value='';iF.disabled=false;iF.focus();
+        let sB=document.getElementById('submitBtn');sB.innerText="Submit Answer";sB.style.background="";sB.disabled=false;
+        document.getElementById('pauseBtn').disabled=false;
+
+        curOp=pool[Math.floor(Math.random()*pool.length)];
+        if(curOp==='*'){n1=rand(2);n2=rand(2);ans=n1*n2;opStr='×';}
+        else if(curOp==='+'){n1=rand(3);n2=rand(3);ans=n1+n2;opStr='+';}
+        else{n1=rand(3);n2=rand(3);if(n2>n1){let t=n1;n1=n2;n2=t;}ans=n1-n2;opStr='-';}
+        pE.innerText=`${n1} ${opStr} ${n2}`;tS=performance.now();loop();
+    }
+
+
+    function handleSubmit(e){
+        e.preventDefault();if(!st){next();return;}if(ps&&!err)return;
+
+        let goal = parseInt(document.getElementById('targetCount').value);
+        if(err){
+            if(goal && s.t >= goal) { openReport(); return; }
+            next(); return;
+        }
+
+        let tm=performance.now();clearInterval(tI);let tk=parseFloat((((tm-tS)/1000)+tE).toFixed(1));
+        let iF=document.getElementById('userAns'),v=parseInt(iF.value),fE=document.getElementById('feedback'),sB=document.getElementById('submitBtn');
+        if(isNaN(v))return;
+
+        s.t++;s.tm+=tk;
+        let c=(v===ans),l=`${n1}${opStr}${n2}=${v} (${c?'✓':'✗'} in ${tk}s)`;s.h.push(l);
+        opStats[curOp].t++;opStats[curOp].tm+=tk;if(c)opStats[curOp].c++;
+        let isLarge = (n1 >= 100 || n2 >= 100);
+        let sz = isLarge ? 'large' : 'small';
+        sizeStats[sz].t++;sizeStats[sz].tm+=tk;if(c)sizeStats[sz].c++;
+
+        if(c){
+            s.c++;fE.innerText="🎉 Correct!";fE.className="correct";iF.disabled=true;document.getElementById('pauseBtn').disabled=true;
+            if(goal && s.t >= goal){
+                setTimeout(openReport, 800);
+            } else {
+                setTimeout(next,800);
+            }
+        }else{
+            err=true;fE.innerText=`❌ Oops! ${n1} ${opStr} ${n2} = ${ans}`;fE.className="incorrect";iF.value='';iF.disabled=true;document.getElementById('pauseBtn').disabled=true;
+            if(goal && s.t >= goal) {
+                sB.innerText = "View Session Report";
+            } else {
+                sB.innerText = "Press Enter to Continue";
+            }
+            sB.className="secondary";sB.focus();
+            tA=setTimeout(()=>{
+                if(err) { if(goal && s.t >= goal) openReport(); else next(); }
+            },3500);
+        }
+    }
+
+
+    function fmtOp(o){
+        let ost=opStats[o];if(ost.t===0)return "No data";
+        let pct=Math.round((ost.c/ost.t)*100),avg=(ost.tm/ost.t).toFixed(1);
+        return `${ost.c}/${ost.t} (${pct}%) • Avg: ${avg}s`;
+    }
+
+    function openReport() {
+        wP=ps;if(st&&!ps&&!err)togglePause();
+        document.getElementById('statTotal').innerText=s.t;
+        document.getElementById('statAdd').innerText=fmtOp('+');
+        document.getElementById('statSub').innerText=fmtOp('-');
+        document.getElementById('statMul').innerText=fmtOp('*');
+
+        let insEl = document.getElementById('advInsights');
+        if(sizeStats.small.t > 0 || sizeStats.large.t > 0){
+            let smAvg = sizeStats.small.t > 0 ? (sizeStats.small.tm / sizeStats.small.t) : 0;
+            let lgAvg = sizeStats.large.t > 0 ? (sizeStats.large.tm / sizeStats.large.t) : 0;
+            let smAcc = sizeStats.small.t > 0 ? Math.round((sizeStats.small.c / sizeStats.small.t)*100) : 100;
+            let lgAcc = sizeStats.large.t > 0 ? Math.round((sizeStats.large.c / sizeStats.large.t)*100) : 100;
+
+            let html = `<div><strong>1-2 Digit Numbers:</strong> ${smAcc}% Accuracy • ${smAvg.toFixed(1)}s avg</div>`;
+            if(sizeStats.large.t > 0){
+                html += `<div style="margin-top:6px;"><strong>3-Digit Numbers:</strong> ${lgAcc}% Accuracy • ${lgAvg.toFixed(1)}s avg</div>`;
+                let speedDiff = lgAvg - smAvg;
+                if(speedDiff > 1.5) html += `<div style="color:#ff3b30;margin-top:6px;font-weight:600;">⚠️ 3-digit equations take noticeably longer (+${speedDiff.toFixed(1)}s). Try the Decomposition or Constant Difference strategy!</div>`;
+                if(smAcc - lgAcc > 15) html += `<div style="color:#ff3b30;margin-top:4px;font-weight:600;">⚠️ Accuracy drops on 3-digit items. Slow down and check place values.</div>`;
+            } else {
+                html += `<div style="margin-top:6px;color:#86868b;">Introduce 3-digit additions/subtractions to measure size thresholds.</div>`;
+            }
+            insEl.innerHTML = html;
+        } else {
+            insEl.innerText = "Complete problems to generate size trends...";
+        }
+
+        document.getElementById('historyLog').innerHTML=s.h.length>0?s.h.map(i=>`<div>${i}</div>`).join(''):"No problems completed yet.";
+        document.getElementById('reportModal').style.display='flex';
+    }
+
+    function closeReport(){
+        document.getElementById('reportModal').style.display='none';
+        if(st&&!wP&&ps&&!err)togglePause();else if(st&&!err)document.getElementById('userAns').focus();
+    }
+
+    function exportReportData() {
+        if (s.t === 0) { alert("No problem history to export yet!"); return; }
+        let a = s.t > 0 ? Math.round((s.c / s.t) * 100) : 0;
+        let av = s.t > 0 ? (s.tm / s.t).toFixed(1) : 0;
+
+        let txt = `MATH PRACTICE PERFORMANCE REPORT\n`;
+        txt += `Generated on: ${new Date().toLocaleString()}\n`;
+        txt += `====================================\n`;
+        txt += `Total Answered: ${s.t}\n`;
+        txt += `Overall Accuracy: ${a}%\n`;
+        txt += `Overall Avg Speed: ${av} seconds\n\n`;
+
+        txt += `OPERATIONS BREAKDOWN:\n`;
+        txt += `- Addition: ${fmtOp('+')}\n`;
+        txt += `- Subtraction: ${fmtOp('-')}\n`;
+        txt += `- Multiplication: ${fmtOp('*')}\n\n`;
+
+        txt += `FULL PROBLEM LOG:\n`;
+        txt += s.h.join('\n');
+
+        let blob = new Blob([txt], { type: 'text/plain' });
+        let link = document.createElement('a');
+        link.download = `math_report_${new Date().toISOString().slice(0,10)}.txt`;
+        link.href = window.URL.createObjectURL(blob);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function resetStats(){
+        if(confirm("Clear all stats and start fresh?")){
+            s={t:0,c:0,tm:0,h:[]};
+            opStats={'+':{t:0,c:0,tm:0},'-':{t:0,c:0,tm:0},'*':{t:0,c:0,tm:0}};
+            sizeStats={small:{t:0,c:0,tm:0},large:{t:0,c:0,tm:0}};
+            init();
+        }
+    }
+    init();
+</script>
+</body>
+</html>
