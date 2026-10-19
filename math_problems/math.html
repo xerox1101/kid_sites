@@ -121,7 +121,13 @@
         document.getElementById('opsConfig').style.pointerEvents="none";document.getElementById('opsConfig').style.opacity="0.5";
         document.getElementById('feedback').innerText='';document.getElementById('feedback').className='';document.getElementById('timer-display').innerText='0.0s';
         let pE=document.getElementById('problem');pE.classList.remove('blurred');
-        let iF=document.getElementById('userAns');iF.value='';iF.disabled=false;iF.focus();
+
+        let iF=document.getElementById('userAns');
+        iF.value='';
+        iF.disabled=false;
+        iF.focus();
+        iF.click(); // Add this line here to reinforce focus on mobile browsers
+
         let sB=document.getElementById('submitBtn');sB.innerText="Submit Answer";sB.style.background="";sB.disabled=false;
         document.getElementById('pauseBtn').disabled=false;
 
@@ -132,11 +138,11 @@
         pE.innerText=`${n1} ${opStr} ${n2}`;tS=performance.now();loop();
     }
 
-
     function handleSubmit(e){
         e.preventDefault();if(!st){next();return;}if(ps&&!err)return;
-
         let goal = parseInt(document.getElementById('targetCount').value);
+
+        // If an error screen is already active, advance cleanly
         if(err){
             if(goal && s.t >= goal) { openReport(); return; }
             next(); return;
@@ -154,26 +160,33 @@
         sizeStats[sz].t++;sizeStats[sz].tm+=tk;if(c)sizeStats[sz].c++;
 
         if(c){
-            s.c++;fE.innerText="🎉 Correct!";fE.className="correct";iF.disabled=true;document.getElementById('pauseBtn').disabled=true;
-            if(goal && s.t >= goal){
-                setTimeout(openReport, 800);
-            } else {
-                setTimeout(next,800);
-            }
+            s.c++;fE.innerText="🎉 Correct!";fE.className="correct";
+            iF.value = '';
+            iF.focus();
+            if(goal && s.t >= goal){setTimeout(openReport, 800);} else {setTimeout(next, 800);}
         }else{
-            err=true;fE.innerText=`❌ Oops! ${n1} ${opStr} ${n2} = ${ans}`;fE.className="incorrect";iF.value='';iF.disabled=true;document.getElementById('pauseBtn').disabled=true;
+            err=true;
+            fE.innerText=`❌ Oops! ${n1} ${opStr} ${n2} = ${ans}`;fE.className="incorrect";
+
+            // REMOVED iF.disabled = true;
+            // Instead, we keep it enabled, keep focus locked, and select the text for zero-friction editing
+            iF.focus();
+            iF.select();
+            document.getElementById('pauseBtn').disabled=true;
+
             if(goal && s.t >= goal) {
                 sB.innerText = "View Session Report";
+                iF.disabled = true; // Drop keyboard only when the full run completely ends
             } else {
                 sB.innerText = "Press Enter to Continue";
             }
             sB.className="secondary";sB.focus();
+
             tA=setTimeout(()=>{
                 if(err) { if(goal && s.t >= goal) openReport(); else next(); }
             },3500);
         }
     }
-
 
     function fmtOp(o){
         let ost=opStats[o];if(ost.t===0)return "No data";
